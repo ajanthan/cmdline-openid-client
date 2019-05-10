@@ -1,10 +1,9 @@
-package main
+package client
 
 import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -14,50 +13,38 @@ import (
 	"time"
 )
 
-type httpServer struct {
+type callbackEndpoint struct {
 	server         *http.Server
 	code           string
 	shutdownSignal chan string
 }
 
-func (h *httpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *callbackEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	code := r.URL.Query().Get("code")
 	if code != "" {
 		h.code = code
-		fmt.Fprintln(w, "Login is sucessfull, You may close the browser and goto commandline")
+		fmt.Fprintln(w, "Login is successful, You may close the browser and goto commandline")
 	} else {
-		fmt.Fprintln(w, "Login is not sucessfull, You may close the browser and try again")
+		fmt.Fprintln(w, "Login is not successful, You may close the browser and try again")
 	}
 	h.shutdownSignal <- "shutdown"
 }
 
-func main() {
-	const callbackURL = "http://localhost:8080/callback"
-	var authzEp = flag.String("authzURL", "https://localhost:9443/oauth2/authorize", "OAuth2 authorization URL")
-	var tokenEp = flag.String("tokenURL", "https://localhost:9443/oauth2/token", "OAuth2 token URL")
-	var clientID = flag.String("clientID", "client", "OAuth2 client ID")
-	var clientSecret = flag.String("clientSecret", "clientSecret", "OAuth2 client secret")
+func HandleOpenIDFlow(clientID, clientSecret, callbackURL, authzEp, tokenEp string) {
 
-	flag.Parse()
-	if *clientID == "" {
-		log.Fatal("clientID is required to run this command")
-	} else if *clientSecret == "" {
-		log.Fatal("clientID is required to run this command")
-	}
-
-	httpServer := &httpServer{}
-	httpServer.shutdownSignal = make(chan string)
-	s := &http.Server{
+	callbackEndpoint := &callbackEndpoint{}
+	callbackEndpoint.shutdownSignal = make(chan string)
+	server := &http.Server{
 		Addr:           ":8080",
 		Handler:        nil,
 		ReadTimeout:    10 * time.Second,
 		WriteTimeout:   10 * time.Second,
 		MaxHeaderBytes: 1 << 20,
 	}
-	httpServer.server = s
-	http.Handle("/callback", httpServer)
-	authzURL, authzURLParseError := url.Parse(*authzEp)
+	callbackEndpoint.server = server
+	http.Handle("/callback", callbackEndpoint)
+	authzURL, authzURLParseError := url.Parse(authzEp)
 
 	if authzURLParseError != nil {
 		log.Fatal(authzURLParseError)
@@ -65,7 +52,7 @@ func main() {
 	query := authzURL.Query()
 	query.Set("response_type", "code")
 	query.Set("scope", "openid")
-	query.Set("client_id", *clientID)
+	query.Set("client_id", clientID)
 	query.Set("redirect_uri", callbackURL)
 	authzURL.RawQuery = query.Encode()
 
@@ -76,12 +63,12 @@ func main() {
 	}
 
 	go func() {
-		s.ListenAndServe()
+		server.ListenAndServe()
 	}()
 
-	<-httpServer.shutdownSignal
-	httpServer.server.Shutdown(context.Background())
-	log.Println("Authorization code is ", httpServer.code)
+	<-callbackEndpoint.shutdownSignal
+	callbackEndpoint.server.Shutdown(context.Background())
+	log.Println("Authorization code is ", callbackEndpoint.code)
 	client := &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
@@ -92,13 +79,13 @@ func main() {
 
 	vals := url.Values{}
 	vals.Set("grant_type", "authorization_code")
-	vals.Set("code", httpServer.code)
+	vals.Set("code", callbackEndpoint.code)
 	vals.Set("redirect_uri", callbackURL)
-	req, requestError := http.NewRequest("POST", *tokenEp, strings.NewReader(vals.Encode()))
+	req, requestError := http.NewRequest("POST", tokenEp, strings.NewReader(vals.Encode()))
 	if requestError != nil {
 		log.Fatal(requestError)
 	}
-	req.SetBasicAuth(*clientID, *clientSecret)
+	req.SetBasicAuth(clientID, clientSecret)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, clientError := client.Do(req)
 	if clientError != nil {
