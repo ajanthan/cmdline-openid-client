@@ -30,5 +30,5 @@ func main() {
 	} else if *clientSecret == "" {
 		log.Fatal("clientID is required to run this command")
 	}
-	client.HandleOpenIDFlow(*clientID, *clientSecret, callbackURL, *tokenEp, *authzEp)
+	client.HandleOpenIDFlow(*clientID, *clientSecret, callbackURL,*authzEp,*tokenEp)
 }
