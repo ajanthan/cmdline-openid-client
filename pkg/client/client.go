@@ -9,8 +9,13 @@ import (
 	"net/http"
 	"net/url"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
+
+	"github.com/akshaybabloo/pkce"
+	oidc "github.com/coreos/go-oidc"
+	"golang.org/x/oauth2"
 )
 
 type callbackEndpoint struct {
@@ -31,7 +36,7 @@ func (h *callbackEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.shutdownSignal <- "shutdown"
 }
 
-func HandleOpenIDFlow(clientID, clientSecret, callbackURL, authzEp, tokenEp string) {
+func HandleOpenIDFlow(clientID, callbackURL string, provider oidc.Provider) {
 
 	callbackEndpoint := &callbackEndpoint{}
 	callbackEndpoint.shutdownSignal = make(chan string)
@@ -44,19 +49,48 @@ func HandleOpenIDFlow(clientID, clientSecret, callbackURL, authzEp, tokenEp stri
 	}
 	callbackEndpoint.server = server
 	http.Handle("/callback", callbackEndpoint)
-	authzURL, authzURLParseError := url.Parse(authzEp)
+	authzURL, authzURLParseError := url.Parse(provider.Endpoint().AuthURL)
 
 	if authzURLParseError != nil {
 		log.Fatal(authzURLParseError)
 	}
+	p := pkce.Pkce{
+		Length: 128,
+	}
+	codeChallenge, err := p.ChallengeCode()
+	if err != nil {
+		log.Fatal(err)
+	}
+	codeVerifier, err := p.VerifyCode()
+	if err != nil {
+		log.Fatal(err)
+	}
 	query := authzURL.Query()
 	query.Set("response_type", "code")
-	query.Set("scope", "openid")
+	query.Set("scope", "openid email profile")
 	query.Set("client_id", clientID)
+	query.Set("code_challenge", codeChallenge)
+	query.Set("code_challenge_method", "S256")
 	query.Set("redirect_uri", callbackURL)
 	authzURL.RawQuery = query.Encode()
 
-	cmd := exec.Command("open", authzURL.String())
+	//cmd := exec.Command("open", authzURL.String())
+	fmt.Println("Execute URL: ", authzURL.String())
+
+	cmd := exec.Command("", authzURL.String())
+	switch runtime.GOOS {
+	case "linux":
+		cmd = exec.Command("xdg-open", authzURL.String())
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", authzURL.String())
+	case "darwin":
+		cmd = exec.Command("open", authzURL.String())
+	default:
+		cmd = nil
+		fmt.Printf("unsupported platform")
+		return
+
+	}
 	cmdErorr := cmd.Start()
 	if cmdErorr != nil {
 		log.Fatal(authzURLParseError)
@@ -81,11 +115,12 @@ func HandleOpenIDFlow(clientID, clientSecret, callbackURL, authzEp, tokenEp stri
 	vals.Set("grant_type", "authorization_code")
 	vals.Set("code", callbackEndpoint.code)
 	vals.Set("redirect_uri", callbackURL)
-	req, requestError := http.NewRequest("POST", tokenEp, strings.NewReader(vals.Encode()))
+	vals.Set("code_verifier", codeVerifier)
+	vals.Set("client_id", clientID)
+	req, requestError := http.NewRequest("POST", provider.Endpoint().TokenURL, strings.NewReader(vals.Encode()))
 	if requestError != nil {
 		log.Fatal(requestError)
 	}
-	req.SetBasicAuth(clientID, clientSecret)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, clientError := client.Do(req)
 	if clientError != nil {
@@ -98,9 +133,56 @@ func HandleOpenIDFlow(clientID, clientSecret, callbackURL, authzEp, tokenEp stri
 		if marshalError != nil {
 			log.Fatal(marshalError)
 		}
-		log.Println(string(jsonStr))
-	} else {
-		log.Println("Error while getting ID token")
-	}
+		//log.Println(string(jsonStr))
+		ctx := context.Background()
+		var myToken oauth2.Token
+		json.Unmarshal([]byte(jsonStr), &myToken)
+		log.Println("ID Token ", myToken.AccessToken)
+		// Getting now the userInfo
+		log.Println("Call now UserInfo ")
+		userInfo, err := provider.UserInfo(ctx, oauth2.StaticTokenSource(&myToken))
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+		oidcConfig := &oidc.Config{
+			ClientID: clientID,
+		}
+		idToken, err := provider.Verifier(oidcConfig).Verify(context.TODO(), myToken.AccessToken)
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
 
+		var outProfile map[string]interface{}
+		var outUserInfo map[string]interface{}
+		if err := idToken.Claims(&outProfile); err != nil {
+			log.Fatal(err)
+			return
+		}
+		if err := userInfo.Claims(&outUserInfo); err != nil {
+			log.Fatal(err)
+			return
+		}
+		data, err := json.MarshalIndent(outProfile, "", "    ")
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+		data2, err := json.MarshalIndent(outUserInfo, "", "    ")
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+		log.Println("Claims from id_token ")
+		log.Println(string(data))
+		log.Println("Claims from userinfo call ")
+		log.Println(string(data2))
+	} else {
+		if resp.StatusCode != 200 {
+			log.Println("Not allowed - check if your client ", clientID, " is public. HTTP code ", resp.Status)
+		} else {
+			log.Println("Error while getting ID token")
+		}
+	}
 }

@@ -3,8 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/ajanthan/cmdline-openid-client/pkg/client"
 	"log"
+
+	oidc "github.com/coreos/go-oidc"
+	"github.com/strehle/cmdline-openid-client/pkg/client"
+	"golang.org/x/net/context"
 )
 
 func main() {
@@ -13,22 +16,23 @@ func main() {
 		fmt.Println("Usage: openid-client \n" +
 			"       This is a CLI to generate OpenID TD Token from an openID connect server. Create a service provider/application in the openID connect server with call back url : " + callbackURL + " and set below flags to get an ID token\n" +
 			"Flags:\n" +
-			"      --authzURL        OAuth2 authorization URL. Default value is https://localhost:9443/oauth2/authorize.\n" +
-			"      --tokenURL        OAuth2 token URL. Default value is https://localhost:9443/oauth2/token\n" +
-			"      --clientID        OAuth2 client ID. This is a mandatory flag.\n" +
-			"      --clientSecret    OAuth2 client secret. This is a mandatory flag.")
+			"      --ias             IAS. Default is https://<yourtenant>.accounts.ondemand.com\n" +
+			"      --clientID        IAS client ID. This is a mandatory flag.\n")
 	}
 
-	var authzEp = flag.String("authzURL", "https://localhost:9443/oauth2/authorize", "OAuth2 authorization URL")
-	var tokenEp = flag.String("tokenURL", "https://localhost:9443/oauth2/token", "OAuth2 token URL")
-	var clientID = flag.String("clientID", "client", "OAuth2 client ID")
-	var clientSecret = flag.String("clientSecret", "clientSecret", "OAuth2 client secret")
+	var iasEp = flag.String("ias", "", "IAS Base URL")
+	var clientID = flag.String("clientID", "", "IAS client ID")
 
 	flag.Parse()
 	if *clientID == "" {
 		log.Fatal("clientID is required to run this command")
-	} else if *clientSecret == "" {
-		log.Fatal("clientID is required to run this command")
+	} else if *iasEp == "" {
+		log.Fatal("IAS is required to run this command")
 	}
-	client.HandleOpenIDFlow(*clientID, *clientSecret, callbackURL,*authzEp,*tokenEp)
+	ctx := context.Background()
+	provider, err := oidc.NewProvider(ctx, *iasEp)
+	if err != nil {
+		log.Fatal(err)
+	}
+	client.HandleOpenIDFlow(*clientID, callbackURL, *provider)
 }
