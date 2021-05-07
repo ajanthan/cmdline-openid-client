@@ -1,4 +1,4 @@
- # SAP IAS -openid-client
+ # SAP IAS openid-commandline-client
 It is a CLI to generate OpenID TD Token from an openID connect server with PKCE and Public Client support thus SAP IAS provides it.
 
 ### How to build the project
