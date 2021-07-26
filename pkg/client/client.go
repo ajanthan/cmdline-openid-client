@@ -36,8 +36,9 @@ func (h *callbackEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.shutdownSignal <- "shutdown"
 }
 
-func HandleOpenIDFlow(clientID, clientSecret, callbackURL string, provider oidc.Provider) {
+func HandleOpenIDFlow(clientID, clientSecret, callbackURL string, provider oidc.Provider) string {
 
+	refreshToken := ""
 	callbackEndpoint := &callbackEndpoint{}
 	callbackEndpoint.shutdownSignal = make(chan string)
 	server := &http.Server{
@@ -88,7 +89,7 @@ func HandleOpenIDFlow(clientID, clientSecret, callbackURL string, provider oidc.
 	default:
 		cmd = nil
 		fmt.Printf("unsupported platform")
-		return
+		return ""
 
 	}
 	cmdErorr := cmd.Start()
@@ -145,12 +146,14 @@ func HandleOpenIDFlow(clientID, clientSecret, callbackURL string, provider oidc.
 		if myToken.AccessToken == "" {
 			log.Println(string(jsonStr))
 		} else {
+			// refresh token
+			refreshToken = myToken.RefreshToken
 			// Getting now the userInfo
 			log.Println("Call now UserInfo ")
 			userInfo, err := provider.UserInfo(ctx, oauth2.StaticTokenSource(&myToken))
 			if err != nil {
 				log.Fatal(err)
-				return
+				return ""
 			}
 			oidcConfig := &oidc.Config{
 				ClientID: clientID,
@@ -158,28 +161,28 @@ func HandleOpenIDFlow(clientID, clientSecret, callbackURL string, provider oidc.
 			idToken, err := provider.Verifier(oidcConfig).Verify(context.TODO(), myToken.AccessToken)
 			if err != nil {
 				log.Fatal(err)
-				return
+				return ""
 			}
 
 			var outProfile map[string]interface{}
 			var outUserInfo map[string]interface{}
 			if err := idToken.Claims(&outProfile); err != nil {
 				log.Fatal(err)
-				return
+				return ""
 			}
 			if err := userInfo.Claims(&outUserInfo); err != nil {
 				log.Fatal(err)
-				return
+				return ""
 			}
 			data, err := json.MarshalIndent(outProfile, "", "    ")
 			if err != nil {
 				log.Fatal(err)
-				return
+				return ""
 			}
 			data2, err := json.MarshalIndent(outUserInfo, "", "    ")
 			if err != nil {
 				log.Fatal(err)
-				return
+				return ""
 			}
 			log.Println("Claims from id_token ")
 			log.Println(string(data))
@@ -193,4 +196,47 @@ func HandleOpenIDFlow(clientID, clientSecret, callbackURL string, provider oidc.
 			log.Println("Error while getting ID token")
 		}
 	}
+	return refreshToken
+}
+
+func HandleRefreshFlow(clientID string, clientSecret string, existingRefresh string, provider oidc.Provider) string {
+	refreshToken := ""
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+	}
+	vals := url.Values{}
+	vals.Set("grant_type", "refresh_token")
+	vals.Set("refresh_token", existingRefresh)
+	vals.Set("client_id", clientID)
+	if clientSecret != "" {
+		vals.Set("client_secret", clientSecret)
+	}
+	req, requestError := http.NewRequest("POST", provider.Endpoint().TokenURL, strings.NewReader(vals.Encode()))
+	if requestError != nil {
+		log.Fatal(requestError)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	resp, clientError := client.Do(req)
+	if clientError != nil {
+		log.Fatal(clientError)
+	}
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	if result != nil {
+		log.Print("Result from refresh flow: ")
+		log.Println(result)
+		jsonStr, marshalError := json.Marshal(result)
+		if marshalError != nil {
+			log.Fatal(marshalError)
+		}
+		var myToken oauth2.Token
+		json.Unmarshal([]byte(jsonStr), &myToken)
+		refreshToken = myToken.RefreshToken
+	}
+	return refreshToken
 }
