@@ -36,12 +36,12 @@ func (h *callbackEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.shutdownSignal <- "shutdown"
 }
 
-func HandleOpenIDFlow(clientID, callbackURL string, provider oidc.Provider) {
+func HandleOpenIDFlow(clientID, clientSecret, callbackURL string, provider oidc.Provider) {
 
 	callbackEndpoint := &callbackEndpoint{}
 	callbackEndpoint.shutdownSignal = make(chan string)
 	server := &http.Server{
-		Addr:           ":8080",
+		Addr:           ":7000",
 		Handler:        nil,
 		ReadTimeout:    10 * time.Second,
 		WriteTimeout:   10 * time.Second,
@@ -67,7 +67,7 @@ func HandleOpenIDFlow(clientID, callbackURL string, provider oidc.Provider) {
 	}
 	query := authzURL.Query()
 	query.Set("response_type", "code")
-	query.Set("scope", "openid email profile")
+	query.Set("scope", "openid")
 	query.Set("client_id", clientID)
 	query.Set("code_challenge", codeChallenge)
 	query.Set("code_challenge_method", "S256")
@@ -116,7 +116,11 @@ func HandleOpenIDFlow(clientID, callbackURL string, provider oidc.Provider) {
 	vals.Set("code", callbackEndpoint.code)
 	vals.Set("redirect_uri", callbackURL)
 	vals.Set("code_verifier", codeVerifier)
+	//vals.Set("code_verifier", "01234567890123456789012345678901234567890123456789")
 	vals.Set("client_id", clientID)
+	if clientSecret != "" {
+		vals.Set("client_secret", clientSecret)
+	}
 	req, requestError := http.NewRequest("POST", provider.Endpoint().TokenURL, strings.NewReader(vals.Encode()))
 	if requestError != nil {
 		log.Fatal(requestError)
@@ -138,46 +142,50 @@ func HandleOpenIDFlow(clientID, callbackURL string, provider oidc.Provider) {
 		var myToken oauth2.Token
 		json.Unmarshal([]byte(jsonStr), &myToken)
 		log.Println("ID Token ", myToken.AccessToken)
-		// Getting now the userInfo
-		log.Println("Call now UserInfo ")
-		userInfo, err := provider.UserInfo(ctx, oauth2.StaticTokenSource(&myToken))
-		if err != nil {
-			log.Fatal(err)
-			return
-		}
-		oidcConfig := &oidc.Config{
-			ClientID: clientID,
-		}
-		idToken, err := provider.Verifier(oidcConfig).Verify(context.TODO(), myToken.AccessToken)
-		if err != nil {
-			log.Fatal(err)
-			return
-		}
+		if myToken.AccessToken == "" {
+			log.Println(string(jsonStr))
+		} else {
+			// Getting now the userInfo
+			log.Println("Call now UserInfo ")
+			userInfo, err := provider.UserInfo(ctx, oauth2.StaticTokenSource(&myToken))
+			if err != nil {
+				log.Fatal(err)
+				return
+			}
+			oidcConfig := &oidc.Config{
+				ClientID: clientID,
+			}
+			idToken, err := provider.Verifier(oidcConfig).Verify(context.TODO(), myToken.AccessToken)
+			if err != nil {
+				log.Fatal(err)
+				return
+			}
 
-		var outProfile map[string]interface{}
-		var outUserInfo map[string]interface{}
-		if err := idToken.Claims(&outProfile); err != nil {
-			log.Fatal(err)
-			return
+			var outProfile map[string]interface{}
+			var outUserInfo map[string]interface{}
+			if err := idToken.Claims(&outProfile); err != nil {
+				log.Fatal(err)
+				return
+			}
+			if err := userInfo.Claims(&outUserInfo); err != nil {
+				log.Fatal(err)
+				return
+			}
+			data, err := json.MarshalIndent(outProfile, "", "    ")
+			if err != nil {
+				log.Fatal(err)
+				return
+			}
+			data2, err := json.MarshalIndent(outUserInfo, "", "    ")
+			if err != nil {
+				log.Fatal(err)
+				return
+			}
+			log.Println("Claims from id_token ")
+			log.Println(string(data))
+			log.Println("Claims from userinfo call ")
+			log.Println(string(data2))
 		}
-		if err := userInfo.Claims(&outUserInfo); err != nil {
-			log.Fatal(err)
-			return
-		}
-		data, err := json.MarshalIndent(outProfile, "", "    ")
-		if err != nil {
-			log.Fatal(err)
-			return
-		}
-		data2, err := json.MarshalIndent(outUserInfo, "", "    ")
-		if err != nil {
-			log.Fatal(err)
-			return
-		}
-		log.Println("Claims from id_token ")
-		log.Println(string(data))
-		log.Println("Claims from userinfo call ")
-		log.Println(string(data2))
 	} else {
 		if resp.StatusCode != 200 {
 			log.Println("Not allowed - check if your client ", clientID, " is public. HTTP code ", resp.Status)

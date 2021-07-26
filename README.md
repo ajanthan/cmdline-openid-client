@@ -15,5 +15,6 @@ Usage: openid-client
 Flags:
       --ias             IAS. Should be https://<yourtenant>.accounts.ondemand.com
       --clientID        IAS client ID, set as public client.
+      --clientSecret    IAS client secret. This is an optional flag.
 ``` 
 for more details.
