@@ -1,5 +1,5 @@
  # SAP IAS openid-commandline-client
-It is a CLI to generate OpenID TD Token from an openID connect server with PKCE and Public Client support thus SAP IAS provides it.
+It is a CLI to generate OpenID TD Token from an openID connect server, mainly created to test PKCE and Public Client support, like SAP IAS provides it. However any other OIDC provider can be used to get tokens.
 
 ### How to build the project
 
@@ -11,10 +11,11 @@ go build cmd/openid-client.go
 ```text
 ./openid-client -help
 Usage: openid-client
-       This is a CLI to generate OpenID TD Token from an openID connect server. Create a service provider/application in the openID connect server with call back url : http://localhost:8080/callback and set below flags to get an ID token
+       This is a CLI to generate OpenID TD Token from an openID connect server. Create a service provider/application in the openID connect server with call back url : http://localhost:7000/callback and set below flags to get an ID token
 Flags:
-      --ias             IAS. Should be https://<yourtenant>.accounts.ondemand.com
-      --clientID        IAS client ID, set as public client.
-      --clientSecret    IAS client secret. This is an optional flag.
+      --ias             OIDC issuer. IAS Default is https://<yourtenant>.accounts.ondemand.com; XSUAA Default is: https://uaa.cf.eu10.hana.ondemand.com/oauth/token
+      --clientID        OIDC client ID. This is a mandatory flag.
+      --clientSecret    OIDC client secret. This is an optional flag and only needed for confidential clients.
+      --refresh         Refresh the received id_token.
 ``` 
 for more details.
