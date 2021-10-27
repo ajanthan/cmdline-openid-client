@@ -13,9 +13,10 @@ go build cmd/openid-client.go
 Usage: openid-client
        This is a CLI to generate OpenID TD Token from an openID connect server. Create a service provider/application in the openID connect server with call back url : http://localhost:7000/callback and set below flags to get an ID token
 Flags:
-      --ias             OIDC issuer. IAS Default is https://<yourtenant>.accounts.ondemand.com; XSUAA Default is: https://uaa.cf.eu10.hana.ondemand.com/oauth/token
-      --clientID        OIDC client ID. This is a mandatory flag.
-      --clientSecret    OIDC client secret. This is an optional flag and only needed for confidential clients.
-      --refresh         Refresh the received id_token.
+      -issuer          IAS. Default is https://<yourtenant>.accounts.ondemand.com; XSUAA Default is: https://uaa.cf.eu10.hana.ondemand.com/oauth/token
+      -client_id       OIDC client ID. This is a mandatory flag.
+      -client_secret   OIDC client secret. This is an optional flag and only needed for confidential clients. 
+      -refresh         Refresh the received id_token.
+      -h               Show this help
 ``` 
 for more details.
