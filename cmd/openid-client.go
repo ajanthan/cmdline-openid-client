@@ -16,10 +16,11 @@ func main() {
 		fmt.Println("Usage: openid-client \n" +
 			"       This is a CLI to generate OpenID TD Token from an openID connect server. Create a service provider/application in the openID connect server with call back url : " + callbackURL + " and set below flags to get an ID token\n" +
 			"Flags:\n" +
-			"      --issuer          IAS. Default is https://<yourtenant>.accounts.ondemand.com; XSUAA Default is: https://uaa.cf.eu10.hana.ondemand.com/oauth/token\n" +
-			"      --client_id       OIDC client ID. This is a mandatory flag.\n" +
-			"      --client_secret   OIDC client secret. This is an optional flag and only needed for confidential clients.\n" +
-			"      --refresh         Refresh the received id_token.\n")
+			"      -issuer           IAS. Default is https://<yourtenant>.accounts.ondemand.com; XSUAA Default is: https://uaa.cf.eu10.hana.ondemand.com/oauth/token\n" +
+			"      -client_id        OIDC client ID. This is a mandatory flag.\n" +
+			"      -client_secret    OIDC client secret. This is an optional flag and only needed for confidential clients.\n" +
+			"      -refresh          Refresh the received id_token.\n" +
+			"      -h                Show this help\n")
 	}
 
 	var issEndPoint = flag.String("issuer", "", "OIDC Issuer URI")
