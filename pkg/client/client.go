@@ -36,9 +36,11 @@ func (h *callbackEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.shutdownSignal <- "shutdown"
 }
 
-func HandleOpenIDFlow(clientID, clientSecret, callbackURL string, provider oidc.Provider) string {
+func HandleOpenIDFlow(clientID, clientSecret, callbackURL string, scopeParameter string, provider oidc.Provider) (string, string) {
 
 	refreshToken := ""
+	accessToken := ""
+	authrizationScope := "openid"
 	callbackEndpoint := &callbackEndpoint{}
 	callbackEndpoint.shutdownSignal = make(chan string)
 	server := &http.Server{
@@ -68,7 +70,13 @@ func HandleOpenIDFlow(clientID, clientSecret, callbackURL string, provider oidc.
 	}
 	query := authzURL.Query()
 	query.Set("response_type", "code")
-	query.Set("scope", "openid")
+	if scopeParameter != "" {
+		if scopeParameter != "none" {
+			query.Set("scope", scopeParameter)
+		}
+	} else {
+		query.Set("scope", authrizationScope)
+	}
 	query.Set("client_id", clientID)
 	query.Set("code_challenge", codeChallenge)
 	query.Set("code_challenge_method", "S256")
@@ -89,7 +97,7 @@ func HandleOpenIDFlow(clientID, clientSecret, callbackURL string, provider oidc.
 	default:
 		cmd = nil
 		fmt.Printf("unsupported platform")
-		return ""
+		return "", ""
 
 	}
 	cmdErorr := cmd.Start()
@@ -146,6 +154,8 @@ func HandleOpenIDFlow(clientID, clientSecret, callbackURL string, provider oidc.
 		if myToken.AccessToken == "" {
 			log.Println(string(jsonStr))
 		} else {
+			// access_token
+			accessToken = myToken.AccessToken
 			// refresh token
 			refreshToken = myToken.RefreshToken
 			// Getting now the userInfo
@@ -153,7 +163,7 @@ func HandleOpenIDFlow(clientID, clientSecret, callbackURL string, provider oidc.
 			userInfo, err := provider.UserInfo(ctx, oauth2.StaticTokenSource(&myToken))
 			if err != nil {
 				log.Fatal(err)
-				return ""
+				return "", ""
 			}
 			oidcConfig := &oidc.Config{
 				ClientID: clientID,
@@ -161,28 +171,28 @@ func HandleOpenIDFlow(clientID, clientSecret, callbackURL string, provider oidc.
 			idToken, err := provider.Verifier(oidcConfig).Verify(context.TODO(), myToken.AccessToken)
 			if err != nil {
 				log.Fatal(err)
-				return ""
+				return "", ""
 			}
 
 			var outProfile map[string]interface{}
 			var outUserInfo map[string]interface{}
 			if err := idToken.Claims(&outProfile); err != nil {
 				log.Fatal(err)
-				return ""
+				return "", ""
 			}
 			if err := userInfo.Claims(&outUserInfo); err != nil {
 				log.Fatal(err)
-				return ""
+				return "", ""
 			}
 			data, err := json.MarshalIndent(outProfile, "", "    ")
 			if err != nil {
 				log.Fatal(err)
-				return ""
+				return "", ""
 			}
 			data2, err := json.MarshalIndent(outUserInfo, "", "    ")
 			if err != nil {
 				log.Fatal(err)
-				return ""
+				return "", ""
 			}
 			log.Println("Claims from id_token ")
 			log.Println(string(data))
@@ -196,7 +206,7 @@ func HandleOpenIDFlow(clientID, clientSecret, callbackURL string, provider oidc.
 			log.Println("Error while getting ID token")
 		}
 	}
-	return refreshToken
+	return accessToken, refreshToken
 }
 
 func HandleRefreshFlow(clientID string, clientSecret string, existingRefresh string, provider oidc.Provider) string {
